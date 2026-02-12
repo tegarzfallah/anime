@@ -1,0 +1,629 @@
+API Example :
+-(List Completed Anime):
+import { load } from "cheerio"
+import { fetchUtils } from "../utils/fetch-util.js"
+
+export const complete = async (page: string) => {
+    const html = await fetchUtils(`/complete-anime/page/${page}`)
+    const $ = load(html)
+    const results: any[] = []
+
+    $(".venz ul li .detpost").each((_, el) => {
+        const title = $(el).find(".jdlflm").text().trim()
+        const episode = $(el).find(".epz").text().trim()
+        const day = $(el).find(".epztipe").text().trim()
+        const date = $(el).find(".newnime").text().trim()
+
+        const thumbnail = $(el).find("img").attr("src") ?? ""
+        const link = $(el).find(".thumb a").attr("href") ?? ""
+        const slug = link.replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\/anime\//, '').replace('/', '')
+
+        if (!title) return
+
+        results.push({
+            title,
+            slug,
+            episode,
+            day,
+            date,
+            link,
+            thumbnail
+        })
+    })
+
+    const pages: number[] = []
+    $(".pagination .page-numbers").each((_, el) => {
+
+        const num = Number($(el).text())
+
+        if (!isNaN(num)) {
+            pages.push(num)
+        }
+    })
+
+    const currentPage =
+        Number($(".page-numbers.current").text()) || 1
+
+    const nextPage =
+        $(".next.page-numbers").attr("href") ?? null
+
+
+    return {
+        success: true,
+        page: currentPage,
+        total_data: results.length,
+
+        pagination: {
+            available_pages: pages,
+            next_page: nextPage
+        },
+
+        data: results
+    }
+}
+
+-(Get Anime Details):
+import { load } from "cheerio"
+import { fetchUtils } from "../utils/fetch-util.js"
+
+type Episode = {
+    title: string
+    link: string
+    slug: string
+    release_date: string
+}
+
+type AnimeDetail = {
+    title: string
+    streaming_title: string
+    thumbnail: string
+    synopsis: string
+    info: Record<string, string | string[]>
+    episodes: Episode[]
+    rekomendasi: RecommendedAnime[]
+}
+
+type RecommendedAnime = {
+    title: string
+    link: string
+    slug: string
+    thumbnail: string
+}
+
+export const detailAnime = async (slug: string) => {
+    const html = await fetchUtils(`/anime/${slug}`)
+    const $ = load(html)
+
+    const title = $(".jdlrx h1").clone().children().remove().end().text().trim()
+    const streaming_title = $(".subheading h2").text().trim()
+    const thumbnail = $(".fotoanime img").first().attr("src") ?? ""
+
+    const synopsis = $(".sinopc p")
+        .map((_, el) => $(el).text().trim())
+        .get()
+        .join("\n")
+
+    const info: Record<string, any> = {}
+
+    $(".infozingle p").each((_, el) => {
+
+        const label = $(el).find("b").text().replace(":", "").trim()
+
+        const fullText = $(el).text()
+        const value = fullText.replace(label, "")
+            .replace(":", "")
+            .trim()
+
+        if (label === "Genre") {
+            const genres = $(el).find("a")
+                .map((_, g) => $(g).text().trim())
+                .get()
+
+            info.genres = genres
+        }
+        else {
+            info[label.toLowerCase().replace(/\s/g, "_")] = value
+        }
+    })
+
+    const episodes: any[] = []
+
+    $(".episodelist").eq(1).find("ul li").each((_, el) => {
+
+        const title = $(el).find("a").text().trim()
+        const link = $(el).find("a").attr("href") ?? ""
+        const slug = link.replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\/episode\//, '').replace('/', '')
+        const release_date = $(el).find(".zeebr").text().trim()
+
+        episodes.push({
+            title,
+            link,
+            slug,
+            release_date
+        })
+    })
+
+    const rekomendasi: RecommendedAnime[] = []
+
+    $(".isi-recommend-anime-series .isi-konten").each((_, el) => {
+
+        const anchor = $(el).find(".isi-anime a").first()
+
+        const title = $(el)
+            .find(".judul-anime a")
+            .text()
+            .trim()
+
+        const link = anchor.attr("href") ?? ""
+
+        const slug = link
+            .replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\/anime\//, "")
+            .replace(/\/$/, "")
+
+        const thumbnail = $(el)
+            .find("img")
+            .attr("src") ?? ""
+
+        rekomendasi.push({
+            title,
+            link,
+            slug,
+            thumbnail
+        })
+    })
+
+    const result: AnimeDetail = {
+        title,
+        streaming_title,
+        thumbnail,
+        synopsis,
+        info,
+        episodes,
+        rekomendasi,
+    }
+
+    return {
+        success: true,
+        data: result
+    }
+}
+
+-(Get Episode Details):
+import { load } from "cheerio"
+import { fetchUtils } from "../utils/fetch-util.js"
+import axios from "axios"
+
+type Mirror = {
+    quality: string
+    provider: string
+    token: string
+    url?: string | null
+}
+type DownloadProvider = {
+    provider: string
+    url: string
+}
+
+type Download = {
+    quality: string
+    size?: string
+    providers: DownloadProvider[]
+}
+
+const extractSlug = (url?: string | null) => {
+    if (!url) return null
+
+    return url
+        .replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\//, '')
+        .replace(/^episode\//, '')
+        .replace(/\/$/, '')
+}
+
+export const detailEpisode = async (slug: string) => {
+    const html = await fetchUtils(`/episode/${slug}`)
+    const $ = load(html)
+    console.log($.html())
+    const title = $(".posttl").text().trim()
+
+    const metadata = {
+        author: $(".kategoz span").first().text().replace("Posted by", "").trim(),
+        release: $(".kategoz span").eq(1).text().replace("Release on", "").trim()
+    }
+
+    //info
+    const info: Record<string, any> = {}
+
+    const thumbnail = $(".cukder").find("img").attr("src") ?? null
+    info.thumbnail = thumbnail
+
+    $(".infozingle p").each((_, el) => {
+
+        const label = $(el).find("b").text().replace(":", "").trim()
+
+        const fullText = $(el).text()
+        const value = fullText.replace(label, "")
+            .replace(":", "")
+            .trim()
+
+        if (label === "Genres") {
+            const genres = $(el).find("a")
+            .map((_, g) => $(g).text().trim())
+            .get()
+            
+            info.genres = genres
+        }
+        else {
+            info[label.toLowerCase().replace(/\s/g, "_")] = value
+        }
+    })
+
+
+    const iframe = $("#pembed iframe").attr("src") ?? null
+
+    let previousUrl: string | null = null
+    let nextUrl: string | null = null
+    let animeUrl: string | null = null
+
+    $(".prevnext a").each((_, el) => {
+
+        const text = $(el).text().toLowerCase()
+        const href = $(el).attr("href")
+
+        if (!href) return
+
+        if (text.includes("see all")) {
+            animeUrl = href
+        }
+
+        else if (text.includes("next")) {
+            nextUrl = href
+        }
+
+        else if (text.includes("prev")) {
+            previousUrl = href
+        }
+    })
+
+    const navigation = {
+        previous: previousUrl ? {
+            url: previousUrl,
+            slug: extractSlug(previousUrl)
+        } : null,
+
+        anime: animeUrl ? (() => {
+            const url = animeUrl as string
+
+            return {
+                url,
+                slug: url.split("/anime/")[1]?.replace("/", "")
+            }
+            })(
+        ) : null,
+
+
+        next: nextUrl ? {
+            url: nextUrl,
+            slug: extractSlug(nextUrl)
+        } : null
+    }
+
+    const episodes:any[] = []
+
+    $(".keyingpost li a").each((_, el) => {
+        const link = $(el).attr("href")
+        episodes.push({
+            title: $(el).text().trim(),
+            url: link,
+            slug: extractSlug(link)
+        })
+    })
+
+    const downloads: Download[] = []
+
+    $(".download ul li").each((_, li) => {
+
+        const providers: DownloadProvider[] = []
+
+        $(li).find("a").each((_, a) => {
+
+            providers.push({
+                provider: $(a).text().trim(),
+                url: $(a).attr("href") ?? ""
+            })
+        })
+
+        downloads.push({
+            quality: $(li).find("strong").text().trim(),
+            size: $(li).find("i").text().trim(),
+            providers
+        })
+    })
+
+    const AJAX_URL = "https://otakudesu.best/wp-admin/admin-ajax.php"
+    const mirrors: Mirror[] = []
+
+    let nonceCache: string | null = null
+
+    const referer =
+        `https://otakudesu.best/episode/${slug}`
+
+    const getNonce = async () => {
+
+        if (nonceCache) return nonceCache
+
+        const res = await axios.post(AJAX_URL, 
+            new URLSearchParams({
+                action: "aa1208d27f29ca340c92c66d1926f13f"
+            })
+        )
+
+        const json = await res.data
+
+        nonceCache = json.data
+        return nonceCache
+    }
+
+    const resolveMirror = async (token: string) => {
+
+        try {
+
+            const payload = JSON.parse(
+                Buffer.from(token, "base64").toString()
+            )
+
+            const nonce = await getNonce()
+
+            const res = await axios.post(AJAX_URL, 
+                new URLSearchParams({
+                    ...payload,
+                    nonce,
+                    action:
+                    "2a3505c93b0035d3f455df82bf976b84"
+                })
+            )
+
+            const json = await res.data
+
+            const iframeHtml =
+                Buffer.from(json.data, "base64")
+                .toString()
+
+            const $$ = load(iframeHtml)
+
+            return $$("iframe").attr("src") ?? null
+
+        }
+        catch {
+            return null
+        }
+    }
+
+    $(".mirrorstream ul").each((_, ul) => {
+
+        $(ul).find("li a").each((_, a) => {
+
+            const token = $(a).attr("data-content")
+            if (!token) return
+
+            let quality = ""
+
+            try {
+
+                const payload = JSON.parse(
+                    Buffer.from(token, "base64").toString()
+                )
+
+                quality = payload.q ?? ""
+
+            } catch {}
+
+            mirrors.push({
+                quality,
+                provider: $(a).text().trim(),
+                token
+            })
+        })
+    })
+
+    await Promise.all(
+        mirrors.map(async (mirror) => {
+
+            mirror.url =
+                await resolveMirror(
+                    mirror.token
+                )
+
+        })
+    )
+
+    const aliveMirrors =
+        mirrors.filter(m => m.url)
+
+    return {
+        success: true,
+        data: {
+            title,
+            metadata,
+            info,
+            iframe,
+            navigation,
+            episodes,
+            mirrors: aliveMirrors,
+            downloads
+        }
+    }
+}
+
+-(Home Page):
+import { load } from "cheerio";
+import { fetchUtils } from "../utils/fetch-util.js"
+
+export const home = async () => {
+    const html = await fetchUtils("/");
+    const $ = load(html);
+
+    const ongoing: any[] = [];
+    const completed: any[] = [];
+
+    $(".venz ul li .detpost").each((_, el) => {
+        const epText = $(el).find(".epz").text().trim();
+        const meta = $(el).find(".epztipe").text().trim();
+        const date = $(el).find(".newnime").text().trim();
+
+        const title = $(el).find(".jdlflm").text().trim();
+        const thumbnail = $(el).find("img").attr("src") ?? "";
+        const link = $(el).find(".thumb a").attr("href") ?? "";
+        const slug = link.replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\/anime\//, '').replace('/', '')
+
+        if (!title) return;
+
+        const item = {
+            title,
+            slug,
+            episodeInfo: epText,
+            meta,
+            date,
+            link,
+            thumbnail,
+        };
+
+        if (epText.toLowerCase().startsWith("episode")) {
+            ongoing.push({ ...item, type: "ongoing" });
+        } else if (epText.toLowerCase().endsWith("episode")) {
+            completed.push({ ...item, type: "completed" });
+        }
+    });
+
+    return {
+        ongoing: {
+            count: ongoing.length,
+            data: ongoing,
+        },
+        completed: {
+            count: completed.length,
+            data: completed,
+        },
+    };
+};
+
+-(Get List Ongoing Anime):
+import { load } from "cheerio"
+import { fetchUtils } from "../utils/fetch-util.js"
+
+export const ongoing = async (page: string) => {
+    const html = await fetchUtils(`/ongoing-anime/page/${page}`)
+    const $ = load(html)
+    const results: any[] = []
+
+    $(".venz ul li .detpost").each((_, el) => {
+        const title = $(el).find(".jdlflm").text().trim()
+        const episode = $(el).find(".epz").text().trim()
+        const day = $(el).find(".epztipe").text().trim()
+        const date = $(el).find(".newnime").text().trim()
+
+        const thumbnail = $(el).find("img").attr("src") ?? ""
+        const link = $(el).find(".thumb a").attr("href") ?? ""
+        const slug = link.replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\/anime\//, '').replace('/', '')
+
+        if (!title) return
+
+        results.push({
+            title,
+            link,
+            slug,
+            episode,
+            date,
+            day,
+            thumbnail
+        })
+    })
+
+    const pages: number[] = []
+    $(".pagination .page-numbers").each((_, el) => {
+
+        const num = Number($(el).text())
+
+        if (!isNaN(num)) {
+            pages.push(num)
+        }
+    })
+
+    const currentPage =
+        Number($(".page-numbers.current").text()) || 1
+
+    const nextPage =
+        $(".next.page-numbers").attr("href") ?? null
+
+
+    return {
+        success: true,
+        page: currentPage,
+        total_data: results.length,
+
+        pagination: {
+            available_pages: pages,
+            next_page: nextPage
+        },
+
+        data: results
+    }
+}
+
+-(Search Anime Feature):
+import { load } from "cheerio"
+import { fetchUtils } from "../utils/fetch-util.js"
+
+export const search = async (query: string) => {
+    const html = await fetchUtils(`/?s=${query}&post_type=anime`)
+    const $ = load(html)
+
+    const results: any[] = []
+
+    $(".chivsrc li").each((_, el) => {
+        const thumbnail = $(el).find("img").attr("src") || ""
+        const title = $(el).find("h2 a").text().trim()
+        const link = $(el).find("h2 a").attr("href") || ""
+        const slug = link.replace(/^https:\/\/otakudesu\.[a-zA-Z0-9-]+\/anime\//, '').replace('/', '')
+
+        const genres: string[] = []
+        $(el)
+            .find(".set")
+            .first()
+            .find("a")
+            .each((_, g) => {
+                genres.push($(g).text().trim())
+            })
+
+        const status = $(el)
+            .find(".set")
+            .eq(1)
+            .text()
+            .replace("Status", "")
+            .replace(":", "")
+            .trim()
+
+        const rating = $(el)
+            .find(".set")
+            .eq(2)
+            .text()
+            .replace("Rating", "")
+            .replace(":", "")
+            .trim()
+
+        results.push({
+            title,
+            link,
+            slug,
+            thumbnail,
+            genres,
+            status,
+            rating
+        })
+    })
+
+    return {
+        success: true,
+        total_data: results.length,
+        data: results
+    }
+}
