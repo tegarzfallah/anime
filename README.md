@@ -34,6 +34,8 @@ Create `.env.local` (optional):
 
 ```bash
 ANIME_SOURCE_URL=https://otakudesu.cloud
+ANIME_FETCH_RETRIES=3
+ANIME_FETCH_TIMEOUT_MS=12000
 ```
 
 If not provided, it defaults to the value above.

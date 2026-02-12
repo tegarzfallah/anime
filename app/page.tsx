@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getComplete, getHome, getOngoing } from '@/lib/scraper/client';
 import { AnimeSection } from '@/components/anime/section';
 import { ContinueWatching } from '@/components/anime/continue-watching';
+import { ErrorState } from '@/components/ui/state';
 
 export default async function HomePage({
   searchParams
@@ -11,11 +12,32 @@ export default async function HomePage({
   const ongoingPage = String(Math.max(1, Number.parseInt(searchParams.ongoingPage || '1', 10) || 1));
   const completePage = String(Math.max(1, Number.parseInt(searchParams.completePage || '1', 10) || 1));
 
-  const [home, ongoing, complete] = await Promise.all([getHome(), getOngoing(ongoingPage), getComplete(completePage)]);
+  const [homeResult, ongoingResult, completeResult] = await Promise.allSettled([
+    getHome(),
+    getOngoing(ongoingPage),
+    getComplete(completePage)
+  ]);
+
+  const home = homeResult.status === 'fulfilled' ? homeResult.value : { ongoing: { count: 0, data: [] }, completed: { count: 0, data: [] } };
+  const ongoing =
+    ongoingResult.status === 'fulfilled'
+      ? ongoingResult.value
+      : { success: false, page: Number(ongoingPage), total_data: 0, pagination: { available_pages: [], next_page: null }, data: [] };
+  const complete =
+    completeResult.status === 'fulfilled'
+      ? completeResult.value
+      : { success: false, page: Number(completePage), total_data: 0, pagination: { available_pages: [], next_page: null }, data: [] };
+
+  const hasPartialFailure =
+    homeResult.status === 'rejected' || ongoingResult.status === 'rejected' || completeResult.status === 'rejected';
 
   return (
     <div className="space-y-10">
       <ContinueWatching />
+
+      {hasPartialFailure ? (
+        <ErrorState message="Some sections are temporarily unavailable due to upstream network errors. Please refresh in a moment." />
+      ) : null}
 
       <AnimeSection title="Trending (Home Ongoing)" items={home.ongoing.data.slice(0, 12)} />
 

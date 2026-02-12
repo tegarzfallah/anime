@@ -10,22 +10,43 @@ import type {
 } from '@/lib/types/anime';
 
 const BASE_URL = process.env.ANIME_SOURCE_URL || 'https://otakudesu.cloud';
+const FETCH_RETRIES = Number(process.env.ANIME_FETCH_RETRIES || 3);
+const FETCH_TIMEOUT_MS = Number(process.env.ANIME_FETCH_TIMEOUT_MS || 12000);
 
 const fetchUtils = async (path: string): Promise<string> => {
   const url = `${BASE_URL}${path}`;
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36'
-    },
-    next: { revalidate: 300 }
-  });
+  let lastError: unknown;
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  for (let attempt = 1; attempt <= FETCH_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36'
+        },
+        signal: controller.signal,
+        next: { revalidate: 300 }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${url}: ${response.status}`);
+      }
+
+      return response.text();
+    } catch (error) {
+      lastError = error;
+      if (attempt < FETCH_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  return response.text();
+  throw new Error(`Failed to fetch ${url} after ${FETCH_RETRIES} attempts: ${(lastError as Error)?.message || 'Unknown error'}`);
 };
 
 const animeSlugFromUrl = (url: string): string =>
