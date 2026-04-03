@@ -3,8 +3,8 @@ import './globals.css';
 import { Navbar } from '@/components/layout/navbar';
 
 export const metadata: Metadata = {
-  title: 'AniStream',
-  description: 'Modern anime streaming app powered by Otakudesu-compatible API'
+  title: 'Animetsu Frontend Clone',
+  description: 'Animetsu-inspired anime streaming frontend built with Next.js'
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
